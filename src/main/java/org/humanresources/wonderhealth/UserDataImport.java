@@ -6,7 +6,6 @@ import org.humanresources.constants.URIConstants;
 import org.humanresources.service.HttpClientService;
 import org.humanresources.model.Employee;
 import org.humanresources.model.*;
-import org.humanresources.processor.FileProcessor;
 import org.humanresources.processor.FileProcessorFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationArguments;
@@ -46,8 +45,9 @@ public class UserDataImport implements ApplicationRunner {
     private final AmazonS3 s3Client;
     private final HttpClientService httpClientService;
 
-    private String sessionId = null;
     private final ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+
+    private String sessionId = null;
 
     private Map<String, Employee> existingEmployees = new HashMap<>();
     private Map<String, Role> existingRoles = new HashMap<>();
@@ -67,7 +67,9 @@ public class UserDataImport implements ApplicationRunner {
     }
 
     private void prepare() throws JSONException, IOException {
+        // this session id is used to get/post/put data to vault system, we need to extend session valid duration if the process takes a long time to run
         sessionId = httpClientService.getSessionId();
+        // load Vault data to memory for validation, the return data is built into a map so we could get the needed object directly without looping the data
         existingEmployees = httpClientService.retrieveEmployees(URIConstants.VAULT_API_URL + URIConstants.EMPLOYEE_OBJECTS_WITH_FIELDS, sessionId);
         existingOffices = httpClientService.retrieveOffices(URIConstants.VAULT_API_URL + URIConstants.OFFICE_OBJECTS_WITH_FIELDS, sessionId);
         existingRoles = httpClientService.retrieveRoles(URIConstants.VAULT_API_URL + URIConstants.ROLE_PICKLISTS, sessionId);
@@ -78,14 +80,13 @@ public class UserDataImport implements ApplicationRunner {
     }
 
     private void startProcess() throws IOException, JSONException {
+        // the configurations for departments are added to the enum, this could be configured in files or DB table for more complex cases
         for (Department department : Department.values()) {
+
             S3ObjectSummary fileObjectSummary = getUserDataFileToImport(department);
             if(fileObjectSummary != null) {
 
-                File csvFile = downloadFile(fileObjectSummary);
-                FileProcessor fileProcessor = FileProcessorFactory.getFileProcessor(department);
-                List<Employee> employeeRecords = fileProcessor.process(csvFile);
-
+                List<Employee> employeeRecords = FileProcessorFactory.getFileProcessor(department).process(downloadFile(fileObjectSummary));
                 processOfficesAndRoles(employeeRecords);
                 processEmployees(employeeRecords);
 
@@ -209,7 +210,7 @@ public class UserDataImport implements ApplicationRunner {
         return result;
     }
 
-    private void processEmployeeRecordsByActionType(List<Employee> employees, boolean isUpdate) {
+    private void processEmployeeRecordsByActionType(List<Employee> employees, boolean isUpdateAction) {
         int chunkSize = 500;
         for (int i = 0; i < employees.size(); i += chunkSize) {
             final int start = i;
@@ -218,10 +219,10 @@ public class UserDataImport implements ApplicationRunner {
             List<Employee> employeesChunk = employees.subList(start, end);
             executor.submit(() -> {
                 try {
-                    File employeesUpdateFile = createCSVFile(isUpdate? FILE_NAME_PREFIX_EMPLOYEE_UPDATE : FILE_NAME_PREFIX_EMPLOYEE_INSERT, start/chunkSize);
-                    writeEmployeeRecordsToCSV(employeesUpdateFile, employeesChunk, isUpdate);
+                    File employeesUpdateFile = createCSVFile(isUpdateAction? FILE_NAME_PREFIX_EMPLOYEE_UPDATE : FILE_NAME_PREFIX_EMPLOYEE_INSERT, start/chunkSize);
+                    writeEmployeeRecordsToCSV(employeesUpdateFile, employeesChunk, isUpdateAction);
 
-                    if(isUpdate){
+                    if(isUpdateAction){
                         System.out.println("Update existing employees: ");
                         httpClientService.putDataWithCSVFile(VAULT_API_URL + EMPLOYEE_OBJECTS, employeesUpdateFile, sessionId);
                     }else {
@@ -262,7 +263,7 @@ public class UserDataImport implements ApplicationRunner {
                         .append(getOfficeObjectId(employee.getOffice())).append(",")
                         .append(employee.getFirstName()).append(",")
                         .append(employee.getLastName()).append(",\"")
-                        .append(getRoleObjectValue(employee.getRoles())).append("\",")
+                        .append(getRoleObjectValueName(employee.getRoles())).append("\",")
                         .append(employee.getOnboardingDate()).append(",")
                         .append(employee.getFirstName()).append(" ")
                         .append(employee.getLastName()).append("\n");
@@ -275,14 +276,14 @@ public class UserDataImport implements ApplicationRunner {
     }
 
     private static File createCSVFile(String fileNamePrefix, int fileCount) throws RuntimeException, IOException {
-        File fileToProcess = new File("C:/Users/Annie/Desktop/test/" + fileNamePrefix + fileCount + ".csv");
+        File fileToProcess = new File(TEMP_FILE_PATH + fileNamePrefix + fileCount + ".csv");
         fileToProcess.getParentFile().mkdirs();
         fileToProcess.createNewFile();
         return fileToProcess;
     }
 
-    private String getRoleObjectValue(List<String> roleInRecord){
-        if(roleInRecord != null && !roleInRecord.isEmpty()){
+    private String getRoleObjectValueName(List<String> roleInRecord){
+        if(!CollectionUtils.isEmpty(roleInRecord)){
             return roleInRecord.stream().map(role -> {
                 if (existingRoles != null && existingRoles.containsKey(role)){
                     return existingRoles.get(role);

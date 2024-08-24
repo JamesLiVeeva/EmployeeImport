@@ -8,13 +8,12 @@ import java.time.format.DateTimeParseException;
 
 public class DateValidator implements Validator<Employee> {
     
-    private static final String DEFAULT_DATE_PATTERN = "yyyy-MM-dd";
+    private static final DateTimeFormatter defaultFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     
     @Override
     public boolean validate(Employee employee) {
         try {
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern(DEFAULT_DATE_PATTERN);
-            LocalDate.parse(employee.getOnboardingDate(), formatter);
+            LocalDate.parse(employee.getOnboardingDate(), defaultFormatter);
             return true;
         } catch (DateTimeParseException e) {
             return false;

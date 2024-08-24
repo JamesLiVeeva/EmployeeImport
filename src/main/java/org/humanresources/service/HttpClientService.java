@@ -91,24 +91,25 @@ public class HttpClientService {
     }
 
     private HttpPost createLoginRequest() throws UnsupportedEncodingException {
-        HttpPost postRequest = new HttpPost(VAULT_API_URL + AUTHORIZATION);
-        postRequest.setHeader(new BasicHeader("Content-Type", "application/x-www-form-urlencoded"));
-        postRequest.setHeader(new BasicHeader("Accept", "application/json"));
-        postRequest.setEntity(new StringEntity("username=" + URLEncoder.encode(System.getenv(VAULT_USERNAME), ENCODING)
+        HttpPost loginRequest = new HttpPost(VAULT_API_URL + AUTHORIZATION);
+        loginRequest.setHeader(new BasicHeader("Content-Type", "application/x-www-form-urlencoded"));
+        loginRequest.setHeader(new BasicHeader("Accept", "application/json"));
+        loginRequest.setEntity(new StringEntity("username=" + URLEncoder.encode(System.getenv(VAULT_USERNAME), ENCODING)
                 + "&password=" + URLEncoder.encode(System.getenv(VAULT_PASSWORD), ENCODING), ENCODING));
-        return postRequest;
+        return loginRequest;
     }
 
-    private void setHttpHeaderWithCSVEntity(HttpEntityEnclosingRequestBase request, File file, String sessionId){
+    private void setHttpHeaderWithCSVEntity(HttpEntityEnclosingRequestBase request, File csvFile, String sessionId){
         request.setHeader("Authorization", sessionId);
         request.setHeader("Content-Type", "text/csv");
         request.setHeader("Accept", "text/csv");
-        request.setEntity(new FileEntity(file, ContentType.TEXT_PLAIN));
+        request.setEntity(new FileEntity(csvFile, ContentType.TEXT_PLAIN));
     }
 
     private void executeRequest(HttpEntityEnclosingRequestBase request) throws IOException {
         try (CloseableHttpResponse response = httpClient.execute(request)) {
             if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK && response.getEntity() != null) {
+                // this could be well-formated so it could be more user-friendly for logging purpose later
                 System.out.println(EntityUtils.toString(response.getEntity()));
             } else {
                 System.out.println("Request fail with response status: " + response.getStatusLine().getStatusCode());
