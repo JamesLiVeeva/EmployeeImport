@@ -69,9 +69,11 @@ public class HRImport implements ApplicationRunner {
     }
 
     private void prepare() throws JSONException, IOException {
-        // this session id is used to get/post/put data to vault system, we need to extend session valid duration if the process takes a long time to run
+        // this session id is used to get/post/put data to vault system
+        // we need to extend session valid duration if the process takes a long time to run
         sessionId = httpClientService.getSessionId();
-        // load Vault data to memory for validation, the return data is built into a map so we could get the needed object directly without looping the data
+        // load Vault data to memory for validation
+        // the return data is built into a map so we could get the needed object directly without looping the data
         existingEmployees = httpClientService.retrieveEmployees(URIConstants.VAULT_API_URL + URIConstants.EMPLOYEE_OBJECTS_WITH_FIELDS, sessionId);
         existingOffices = httpClientService.retrieveOffices(URIConstants.VAULT_API_URL + URIConstants.OFFICE_OBJECTS_WITH_FIELDS, sessionId);
         existingRoles = httpClientService.retrieveRoles(URIConstants.VAULT_API_URL + URIConstants.ROLE_PICKLISTS, sessionId);
@@ -81,14 +83,15 @@ public class HRImport implements ApplicationRunner {
         executor.shutdown();
     }
 
-    private void startProcess() throws IOException, JSONException {
-        // the configurations for departments are added to the enum, this could be configured in files or DB table for more complex cases
+    private void startProcess() throws IOException {
+        // the configurations for departments are added to the enum
+        // this could be configured in files or DB table for more complex cases
         for (Department department : Department.values()) {
 
             S3ObjectSummary fileObjectSummary = getPendingImportS3Object(department);
             if(fileObjectSummary != null) {
-
-                List<Employee> employeeRecords = FileProcessorFactory.getFileProcessor(department).process(downloadFile(fileObjectSummary));
+                List<Employee> employeeRecords = FileProcessorFactory.getFileProcessor(department)
+                        .process(downloadFile(fileObjectSummary));
                 // create new offices and roles first, so the employees could reference them
                 importOfficesAndRoles(employeeRecords);
                 importEmployees(employeeRecords);
@@ -110,11 +113,11 @@ public class HRImport implements ApplicationRunner {
             }
         }
 
-        processEmployeeRecordsByActionType(employeesToInsert, false);
-        processEmployeeRecordsByActionType(employeesToUpdate, true);
+        importEmployeesByActionType(employeesToInsert, false);
+        importEmployeesByActionType(employeesToUpdate, true);
     }
 
-    private void importOfficesAndRoles(List<Employee> employeeRecords) throws JSONException, IOException {
+    private void importOfficesAndRoles(List<Employee> employeeRecords){
         Set<String> newOffices = new HashSet<>();
         Set<String> newRoles = new HashSet<>();
 
@@ -132,11 +135,6 @@ public class HRImport implements ApplicationRunner {
 
         createNewOffices(newOffices);
         // createNewRoles(newRoles); -- my current user has no permission to create new roles
-
-        // refresh data
-        existingOffices = httpClientService.retrieveOffices(URIConstants.VAULT_API_URL + URIConstants.OFFICE_OBJECTS_WITH_FIELDS, sessionId);
-        existingRoles = httpClientService.retrieveRoles(URIConstants.VAULT_API_URL + URIConstants.ROLE_PICKLISTS, sessionId);
-
     }
 
     private void createNewOffices(Set<String> offices) {
@@ -145,20 +143,24 @@ public class HRImport implements ApplicationRunner {
         for (int i = 0; i < newOffices.size(); i += chunkSize) {
             final int start = i;
             final int end = Math.min(i + chunkSize, newOffices.size());
-
             List<String> officesChunk = newOffices.subList(start, end);
 
             // we could get the execution results by FutureTask if needed
-            executor.submit(() -> {
-                try {
-                    File officesInsertFile = createCSVFile(FILE_NAME_OFFICE_INSERT_PREFIX, start/chunkSize);
-                    writeOfficeRecordsToCSV(officesInsertFile, officesChunk);
-                    System.out.println("Create new offices: ");
-                    httpClientService.postDataWithCSVFile(VAULT_API_URL + OFFICE_OBJECTS, officesInsertFile, sessionId);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            });
+            // for example we could get execution results for logging purpose
+            executor.submit(() -> createNewOfficesInBulk(start, chunkSize, officesChunk));
+        }
+    }
+
+    private void createNewOfficesInBulk(int start, int chunkSize, List<String> officesChunk) {
+        try {
+            File officesInsertFile = createCSVFile(FILE_NAME_OFFICE_INSERT_PREFIX, start / chunkSize);
+            writeOfficeRecordsToCSV(officesInsertFile, officesChunk);
+            System.out.println("Create new offices: ");
+            httpClientService.postDataWithCSVFile(VAULT_API_URL + OFFICE_OBJECTS, officesInsertFile, sessionId);
+            // refresh data so employees could reference to the new offices
+            existingOffices = httpClientService.retrieveOffices(URIConstants.VAULT_API_URL + URIConstants.OFFICE_OBJECTS_WITH_FIELDS, sessionId);
+        } catch (IOException | JSONException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -170,18 +172,20 @@ public class HRImport implements ApplicationRunner {
             List<String> rolesChunk = newRoles.subList(i, end);
 
             // we could get the execution results by FutureTask if needed
-            executor.submit(() -> {
-                try {
-                    AtomicInteger index = new AtomicInteger(1);
-                    String requestBody = rolesChunk.stream()
-                            .map(newRole ->  "value_" + (index.getAndIncrement()) + "=" + newRole)
-                            .collect(Collectors.joining("&"));
-                    System.out.println("Create new roles: ");
-                    httpClientService.postDataWithTextEntity(VAULT_API_URL + ROLE_PICKLISTS, sessionId, requestBody);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            });
+            executor.submit(() -> createNewRolesInBulk(rolesChunk));
+        }
+    }
+
+    private void createNewRolesInBulk(List<String> rolesChunk) {
+        try {
+            AtomicInteger index = new AtomicInteger(1);
+            String requestBody = rolesChunk.stream()
+                    .map(newRole ->  "value_" + (index.getAndIncrement()) + "=" + newRole)
+                    .collect(Collectors.joining("&"));
+            System.out.println("Create new roles: ");
+            httpClientService.postDataWithTextEntity(VAULT_API_URL + ROLE_PICKLISTS, sessionId, requestBody);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -237,30 +241,33 @@ public class HRImport implements ApplicationRunner {
         return result;
     }
 
-    private void processEmployeeRecordsByActionType(List<Employee> employees, boolean isUpdateAction) {
+    private void importEmployeesByActionType(List<Employee> employees, boolean isUpdateAction) {
         int chunkSize = 500;
         for (int i = 0; i < employees.size(); i += chunkSize) {
             final int start = i;
             final int end = Math.min(i + chunkSize, employees.size());
-
             List<Employee> employeesChunk = employees.subList(start, end);
-            // we could get the execution results by Future interface if needed
-            executor.submit(() -> {
-                try {
-                    File employeesUpdateFile = createCSVFile(isUpdateAction? FILE_NAME_EMPLOYEE_UPDATE_PREFIX : FILE_NAME_EMPLOYEE_INSERT_PREFIX, start/chunkSize);
-                    writeEmployeeRecordsToCSV(employeesUpdateFile, employeesChunk, isUpdateAction);
 
-                    if(isUpdateAction){
-                        System.out.println("Update existing employees: ");
-                        httpClientService.putDataWithCSVFile(VAULT_API_URL + EMPLOYEE_OBJECTS, employeesUpdateFile, sessionId);
-                    }else {
-                        System.out.println("Create new employees: ");
-                        httpClientService.postDataWithCSVFile(VAULT_API_URL + EMPLOYEE_OBJECTS, employeesUpdateFile, sessionId);
-                    }
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            });
+            // we could get the execution results by Future interface if needed
+            // for example we could get execution results for logging purpose
+            executor.submit(() -> importEmployeesInBulk(isUpdateAction, start, chunkSize, employeesChunk));
+        }
+    }
+
+    private void importEmployeesInBulk(boolean isUpdateAction, int start, int chunkSize, List<Employee> employeesChunk) {
+        try {
+            File employeesUpdateFile = createCSVFile(isUpdateAction ? FILE_NAME_EMPLOYEE_UPDATE_PREFIX : FILE_NAME_EMPLOYEE_INSERT_PREFIX, start / chunkSize);
+            writeEmployeeRecordsToCSV(employeesUpdateFile, employeesChunk, isUpdateAction);
+
+            if(isUpdateAction){
+                System.out.println("Update existing employees: ");
+                httpClientService.putDataWithCSVFile(VAULT_API_URL + EMPLOYEE_OBJECTS, employeesUpdateFile, sessionId);
+            }else {
+                System.out.println("Create new employees: ");
+                httpClientService.postDataWithCSVFile(VAULT_API_URL + EMPLOYEE_OBJECTS, employeesUpdateFile, sessionId);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -273,6 +280,7 @@ public class HRImport implements ApplicationRunner {
                 }
                 writer.flush();
             } catch (IOException e) {
+                // TODO need to be well-handled later
                 System.out.println("Fail to write offices to csv file with exception: " + e.getMessage());
             }
         }
@@ -295,6 +303,7 @@ public class HRImport implements ApplicationRunner {
             }
             writer.flush();
         } catch (IOException e) {
+            // TODO need to be well-handled later
             System.out.println("Fail to write employees to csv file with exception: " + e.getMessage());
         }
     }
