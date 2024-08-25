@@ -23,6 +23,7 @@ import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import static org.humanresources.constants.URIConstants.*;
@@ -87,6 +88,7 @@ public class UserDataImport implements ApplicationRunner {
             if(fileObjectSummary != null) {
 
                 List<Employee> employeeRecords = FileProcessorFactory.getFileProcessor(department).process(downloadFile(fileObjectSummary));
+                // create new offices and roles first, so the employees could reference them
                 processOfficesAndRoles(employeeRecords);
                 processEmployees(employeeRecords);
 
@@ -112,20 +114,23 @@ public class UserDataImport implements ApplicationRunner {
     }
 
     private void processOfficesAndRoles(List<Employee> employeeRecords) throws JSONException, IOException {
-        List<String> newOffices = new ArrayList<>();
-        List<String> newRoles = new ArrayList<>();
+        Set<String> newOffices = new HashSet<>();
+        Set<String> newRoles = new HashSet<>();
 
         for (Employee employee : employeeRecords) {
             if(!existingOffices.containsKey(employee.getOffice())){
                 newOffices.add(employee.getOffice());
             }
-            if(!existingRoles.containsKey(employee.getRoles())){
-                newOffices.add(employee.getOffice());
-            }
+            employee.getRoles().forEach(role ->{
+                if(!existingRoles.containsKey(role)){
+                    newRoles.add(role);
+                }
+            });
+
         }
 
         createNewOffices(newOffices);
-        createNewRoles(newRoles);
+        // createNewRoles(newRoles); -- my current user has no permission to create new roles
 
         // refresh data
         existingOffices = httpClientService.retrieveOffices(URIConstants.VAULT_API_URL + URIConstants.OFFICE_OBJECTS_WITH_FIELDS, sessionId);
@@ -133,14 +138,16 @@ public class UserDataImport implements ApplicationRunner {
 
     }
 
-    private void createNewOffices(List<String> newOffices) {
+    private void createNewOffices(Set<String> offices) {
         int chunkSize = 500;
+        List<String> newOffices = new ArrayList<>(offices);
         for (int i = 0; i < newOffices.size(); i += chunkSize) {
             final int start = i;
             final int end = Math.min(i + chunkSize, newOffices.size());
 
             List<String> officesChunk = newOffices.subList(start, end);
 
+            // we could get the execution results by FutureTask if needed
             executor.submit(() -> {
                 try {
                     File officesInsertFile = createCSVFile(FILE_NAME_PREFIX_OFFICE_INSERT, start/chunkSize);
@@ -154,8 +161,27 @@ public class UserDataImport implements ApplicationRunner {
         }
     }
 
-    private void createNewRoles(List<String> roles) {
-        // TODO
+    private void createNewRoles(Set<String> roles) {
+        int chunkSize = 500;
+        List<String> newRoles = new ArrayList<>(roles);
+        for (int i = 0; i < newRoles.size(); i += chunkSize) {
+            final int end = Math.min(i + chunkSize, newRoles.size());
+            List<String> rolesChunk = newRoles.subList(i, end);
+
+            // we could get the execution results by FutureTask if needed
+            executor.submit(() -> {
+                try {
+                    AtomicInteger index = new AtomicInteger(1);
+                    String requestBody = rolesChunk.stream()
+                            .map(newRole ->  "value_" + (index.getAndIncrement()) + "=" + newRole)
+                            .collect(Collectors.joining("&"));
+                    System.out.println("Create new roles: ");
+                    httpClientService.postDataWithTextEntity(VAULT_API_URL + ROLE_PICKLISTS, sessionId, requestBody);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
     }
 
     private File downloadFile(S3ObjectSummary fileObjectSummary) {
@@ -202,7 +228,7 @@ public class UserDataImport implements ApplicationRunner {
                     dateTimeFormatter.parse(dateInFile);
                     result = true;
                 } catch (DateTimeParseException exp){
-                    System.out.printf("Fail to parse date %d for file %.%n", dateInFile, filename);
+                    System.out.println("Fail to parse date in filename: " + filename);
                 }
             }
         }
@@ -217,6 +243,7 @@ public class UserDataImport implements ApplicationRunner {
             final int end = Math.min(i + chunkSize, employees.size());
 
             List<Employee> employeesChunk = employees.subList(start, end);
+            // we could get the execution results by Future interface if needed
             executor.submit(() -> {
                 try {
                     File employeesUpdateFile = createCSVFile(isUpdateAction? FILE_NAME_PREFIX_EMPLOYEE_UPDATE : FILE_NAME_PREFIX_EMPLOYEE_INSERT, start/chunkSize);
@@ -248,10 +275,6 @@ public class UserDataImport implements ApplicationRunner {
                 System.out.println("Fail to write offices to csv file with exception: " + e.getMessage());
             }
         }
-    }
-
-    private void writeRoleRecordsToCSV(File csvFile, List<String> roles) {
-        // TODO
     }
 
     private void writeEmployeeRecordsToCSV(File csvFile, List<Employee> employees, boolean isUpdate) throws IOException{

@@ -58,11 +58,21 @@ public class HttpClientService {
         executeRequest(postRequest);
     }
 
+
     public void putDataWithCSVFile(String url, File csvFile, String sessionId) throws IOException {
         HttpPut putRequest = createPutRequest(url);
         setHttpHeaderWithCSVEntity(putRequest, csvFile, sessionId);
         executeRequest(putRequest);
     }
+
+    public void postDataWithTextEntity(String url, String sessionId, String requestBody) throws IOException {
+        HttpPost postRequest = createPostRequest(url);
+        postRequest.setHeader("Authorization", sessionId);
+        postRequest.setHeader("Content-Type", "application/x-www-form-urlencoded");
+        postRequest.setEntity(new StringEntity(requestBody));
+        executeRequest(postRequest);
+    }
+
 
     public Map<String, Employee> retrieveEmployees(String url, String sessionId) throws IOException, JSONException {
         return retrieveData(url, sessionId, RETRIEVED_DATA, new TypeReference<>() {}, Employee::getEmployeeId);
