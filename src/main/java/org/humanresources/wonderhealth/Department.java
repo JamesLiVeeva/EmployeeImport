@@ -1,7 +1,7 @@
 package org.humanresources.wonderhealth;
 
 import lombok.Getter;
-import org.humanresources.utils.FileType;
+import org.humanresources.processor.FileType;
 
 @Getter
 public enum Department {

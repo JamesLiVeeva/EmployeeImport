@@ -4,7 +4,7 @@ import org.humanresources.model.Employee;
 
 public class ValidationChainBuilder {
 
-    public static ValidationChain<Employee> getDefaultValidationChain() {
+    public static ValidationChain<Employee> buildDefaultValidationChain() {
         ValidationChain<Employee> chain = new ValidationChain<>();
         chain.addValidator(new EmployeeIDValidator());
         chain.addValidator(new UserNameValidator());

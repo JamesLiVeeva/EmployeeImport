@@ -7,6 +7,7 @@ import org.humanresources.service.HttpClientService;
 import org.humanresources.model.Employee;
 import org.humanresources.model.*;
 import org.humanresources.processor.FileProcessorFactory;
+import org.humanresources.utils.DateUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -29,19 +30,19 @@ import java.util.stream.Collectors;
 import static org.humanresources.constants.URIConstants.*;
 
 @Component
-public class UserDataImport implements ApplicationRunner {
+public class HRImport implements ApplicationRunner {
 
     private static final String HUMAN_RESOURCES_BUCKET_NAME = "human-resources-bucket-for-demo";
 
     private static final String TEMP_FILE_PATH = "/tmp/";
 
-    private static final String FILE_NAME_PREFIX_EMPLOYEE_INSERT = "Insert_Employees_";
-    private static final String FILE_NAME_PREFIX_EMPLOYEE_UPDATE = "Update_Employees_";
-    private static final String FILE_NAME_PREFIX_OFFICE_INSERT = "Insert_Offices_";
+    private static final String FILE_NAME_EMPLOYEE_INSERT_PREFIX = "Insert_Employees_";
+    private static final String FILE_NAME_EMPLOYEE_UPDATE_PREFIX = "Update_Employees_";
+    private static final String FILE_NAME_OFFICE_INSERT_PREFIX = "Insert_Offices_";
 
-    private static final String CSV_HEADER_EMPLOYEE_INSERT = "employee_id__c,office__c,first_name__c,last_name__c,role__c,on_board_date__c,name__v";
-    private static final String CSV_HEADER_EMPLOYEE_UPDATE = "id,employee_id__c,office__c,first_name__c,last_name__c,role__c,on_board_date__c,name__v";
-    private static final String CSV_HEADER_OFFICE_INSERT = "name__v";
+    private static final String CSV_EMPLOYEE_INSERT_HEADER = "employee_id__c,office__c,first_name__c,last_name__c,role__c,on_board_date__c,name__v";
+    private static final String CSV_EMPLOYEE_UPDATE_HEADER = "id,employee_id__c,office__c,first_name__c,last_name__c,role__c,on_board_date__c,name__v";
+    private static final String CSV_OFFICE_INSERT_HEADER = "name__v";
 
     private final AmazonS3 s3Client;
     private final HttpClientService httpClientService;
@@ -55,7 +56,7 @@ public class UserDataImport implements ApplicationRunner {
     private Map<String, Office> existingOffices = new HashMap<>();
 
     @Autowired
-    public UserDataImport(AmazonS3 s3Client, HttpClientService httpClientService) {
+    public HRImport(AmazonS3 s3Client, HttpClientService httpClientService) {
         this.s3Client = s3Client;
         this.httpClientService = httpClientService;
     }
@@ -84,20 +85,20 @@ public class UserDataImport implements ApplicationRunner {
         // the configurations for departments are added to the enum, this could be configured in files or DB table for more complex cases
         for (Department department : Department.values()) {
 
-            S3ObjectSummary fileObjectSummary = getUserDataFileToImport(department);
+            S3ObjectSummary fileObjectSummary = getPendingImportS3Object(department);
             if(fileObjectSummary != null) {
 
                 List<Employee> employeeRecords = FileProcessorFactory.getFileProcessor(department).process(downloadFile(fileObjectSummary));
                 // create new offices and roles first, so the employees could reference them
-                processOfficesAndRoles(employeeRecords);
-                processEmployees(employeeRecords);
+                importOfficesAndRoles(employeeRecords);
+                importEmployees(employeeRecords);
 
                 archiveProcessedFile(fileObjectSummary.getKey());
             }
         }
     }
 
-    private void processEmployees(List<Employee> employeeRecords) {
+    private void importEmployees(List<Employee> employeeRecords) {
         List<Employee> employeesToInsert = new ArrayList<>();
         List<Employee> employeesToUpdate = new ArrayList<>();
 
@@ -113,7 +114,7 @@ public class UserDataImport implements ApplicationRunner {
         processEmployeeRecordsByActionType(employeesToUpdate, true);
     }
 
-    private void processOfficesAndRoles(List<Employee> employeeRecords) throws JSONException, IOException {
+    private void importOfficesAndRoles(List<Employee> employeeRecords) throws JSONException, IOException {
         Set<String> newOffices = new HashSet<>();
         Set<String> newRoles = new HashSet<>();
 
@@ -150,7 +151,7 @@ public class UserDataImport implements ApplicationRunner {
             // we could get the execution results by FutureTask if needed
             executor.submit(() -> {
                 try {
-                    File officesInsertFile = createCSVFile(FILE_NAME_PREFIX_OFFICE_INSERT, start/chunkSize);
+                    File officesInsertFile = createCSVFile(FILE_NAME_OFFICE_INSERT_PREFIX, start/chunkSize);
                     writeOfficeRecordsToCSV(officesInsertFile, officesChunk);
                     System.out.println("Create new offices: ");
                     httpClientService.postDataWithCSVFile(VAULT_API_URL + OFFICE_OBJECTS, officesInsertFile, sessionId);
@@ -200,7 +201,7 @@ public class UserDataImport implements ApplicationRunner {
         s3Client.deleteObject(deleteObjRequest);
     }
 
-    private S3ObjectSummary getUserDataFileToImport(Department department){
+    private S3ObjectSummary getPendingImportS3Object(Department department){
         ListObjectsV2Result objects = s3Client.listObjectsV2(new ListObjectsV2Request()
                 .withBucketName(HUMAN_RESOURCES_BUCKET_NAME)
                 .withPrefix(department.getFilePath()));
@@ -221,8 +222,8 @@ public class UserDataImport implements ApplicationRunner {
             }
 
             if(filename.toLowerCase().startsWith(department.getFileNamePrefix().toLowerCase())
-                    && filename.toLowerCase().endsWith(department.getFileType().getExtension().toLowerCase())){
-                String dateInFile = filename.substring(department.getFileNamePrefix().length(), filename.length() - department.getFileType().getExtension().length() - 1);
+                    && filename.toLowerCase().endsWith(department.getFileType().name().toLowerCase())){
+                String dateInFile = filename.substring(department.getFileNamePrefix().length(), filename.length() - department.getFileType().name().length() - 1);
                 DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern(department.getDatePattern());
                 try{
                     dateTimeFormatter.parse(dateInFile);
@@ -246,7 +247,7 @@ public class UserDataImport implements ApplicationRunner {
             // we could get the execution results by Future interface if needed
             executor.submit(() -> {
                 try {
-                    File employeesUpdateFile = createCSVFile(isUpdateAction? FILE_NAME_PREFIX_EMPLOYEE_UPDATE : FILE_NAME_PREFIX_EMPLOYEE_INSERT, start/chunkSize);
+                    File employeesUpdateFile = createCSVFile(isUpdateAction? FILE_NAME_EMPLOYEE_UPDATE_PREFIX : FILE_NAME_EMPLOYEE_INSERT_PREFIX, start/chunkSize);
                     writeEmployeeRecordsToCSV(employeesUpdateFile, employeesChunk, isUpdateAction);
 
                     if(isUpdateAction){
@@ -266,7 +267,7 @@ public class UserDataImport implements ApplicationRunner {
     private void writeOfficeRecordsToCSV(File csvFile, List<String> newOffices) {
         if(!CollectionUtils.isEmpty(newOffices)) {
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(csvFile))) {
-                writer.append(CSV_HEADER_OFFICE_INSERT).append("\n");
+                writer.append(CSV_OFFICE_INSERT_HEADER).append("\n");
                 for (String office: newOffices) {
                     writer.append(office).append("\n");
                 }
@@ -279,7 +280,7 @@ public class UserDataImport implements ApplicationRunner {
 
     private void writeEmployeeRecordsToCSV(File csvFile, List<Employee> employees, boolean isUpdate) throws IOException{
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(csvFile))) {
-            writer.append(isUpdate? CSV_HEADER_EMPLOYEE_UPDATE : CSV_HEADER_EMPLOYEE_INSERT).append("\n");
+            writer.append(isUpdate? CSV_EMPLOYEE_UPDATE_HEADER : CSV_EMPLOYEE_INSERT_HEADER).append("\n");
             for (Employee employee : employees) {
                 writer.append(isUpdate?  getEmployeeObjectId(employee.getEmployeeId()) + "," : "");
                 writer.append(employee.getEmployeeId()).append(",")
@@ -287,7 +288,7 @@ public class UserDataImport implements ApplicationRunner {
                         .append(employee.getFirstName()).append(",")
                         .append(employee.getLastName()).append(",\"")
                         .append(getRoleObjectValueName(employee.getRoles())).append("\",")
-                        .append(employee.getOnboardingDate()).append(",")
+                        .append(DateUtil.formatDate(employee.getOnboardingDate())).append(",")
                         .append(employee.getFirstName()).append(" ")
                         .append(employee.getLastName()).append("\n");
 

@@ -4,7 +4,6 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 import org.humanresources.model.Employee;
-import org.humanresources.utils.Utils;
 import org.humanresources.validator.ValidationChain;
 
 import java.io.File;
@@ -55,7 +54,7 @@ public class CSVFileProcessor implements FileProcessor {
                 .lastName(csvRecord.get("Last Name"))
                 .office(csvRecord.get("Office"))
                 .roles(List.of(csvRecord.get("Role").split(",")))
-                .onboardingDate(Utils.formatDate(csvRecord.get("On Board Date")))
+                .onboardingDate(csvRecord.get("On Board Date"))
                 .build();
     }
 

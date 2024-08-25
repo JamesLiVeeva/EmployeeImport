@@ -10,17 +10,17 @@ public class FileProcessorFactory {
         switch (department.getFileType()) {
             case CSV:
                 processor =  new CSVFileProcessor();
-                processor.setFieldValidators(ValidationChainBuilder.getDefaultValidationChain());
+                processor.setFieldValidators(ValidationChainBuilder.buildDefaultValidationChain());
                 processor.setDelimiter(department.getDelimiter());
                 return processor;
             case TXT:
                 processor =  new TXTFileProcessor();
-                processor.setFieldValidators(ValidationChainBuilder.getDefaultValidationChain());
+                processor.setFieldValidators(ValidationChainBuilder.buildDefaultValidationChain());
                 processor.setDelimiter(department.getDelimiter());
                 return processor;
             default:
                 throw new IllegalArgumentException("Unsupported file type with extension of: "
-                        + department.getFileType().getExtension());
+                        + department.getFileType().name());
         }
     }
 

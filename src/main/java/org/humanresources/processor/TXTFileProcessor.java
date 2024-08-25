@@ -1,7 +1,6 @@
 package org.humanresources.processor;
 
 import org.humanresources.model.Employee;
-import org.humanresources.utils.Utils;
 import org.humanresources.validator.ValidationChain;
 
 import java.io.*;
@@ -54,7 +53,7 @@ public class TXTFileProcessor implements FileProcessor {
                 .lastName(columns[LAST_NAME_INDEX])
                 .office(columns[OFFICE_INDEX])
                 .roles(List.of(columns[ROLE_INDEX].split(",")))
-                .onboardingDate(Utils.formatDate(columns[ONBOARDING_DATE_INDEX]))
+                .onboardingDate(columns[ONBOARDING_DATE_INDEX])
                 .build();
     }
 
