@@ -15,6 +15,8 @@ The import process will get the employee files, validate the employee data and i
 
 ### Brief Resources Introduction 
 
+We choose to leverage AWS for our cloud-based solution because of its reliability, security and cost-effectiveness. The whole project is designed based on an event-driven architecture. When the event occurs on the scheduled time, it will trigger the followed processing steps automatically. The core services used are listed below:
+
 - **Amazon S3**: We will use Amazon S3 for cloud object storage. WonderHealth Inc. will upload employee files to S3 and we will get the files for processing later.
   - **Note** that different departments will have different folders in our case.
     
