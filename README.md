@@ -29,7 +29,11 @@ We choose to leverage AWS for our cloud-based solution because of its reliabilit
 - **AWS Fargate**: We could run our batch jobs using AWS Fargate, a serverless compute engine for containers.
 - **Amazon ECR**: We will use Amazon Elastic Container Registry (ECR) to store and manage our Docker images, enabling seamless pushing and pulling of container images for our batch job.
 - **Cloudwatch**: This monitoring and logging service could be used to track the runing status of our project.
-- **Others**: Except for these main resources used, we also need to consider for VPC(Virtual Private Cloud for the whole project), IAM Role(Different role-based control for different users and resources), Security Group(virtual firewalls to control inbound and outbound traffic for our VPC), Secret Manager or Parameter Store(AWS Secrets, Vault user information and other credentials should be well stored and protected).
+- **Others**: Except for these main resources used, we also need to consider for
+  - VPC(Virtual Private Cloud for the whole project)
+  - IAM Role(Different role-based control for different users and resources)
+  - Security Group(virtual firewalls to control inbound and outbound traffic for our VPC)
+  - Secret Manager or Parameter Store(AWS Secrets, Vault user information and other credentials should be well stored and protected)
 
 ## Basic Workflow
 
