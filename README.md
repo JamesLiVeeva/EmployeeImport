@@ -1,11 +1,11 @@
 # Employee Import Project
 
-This project is used to import employees from client's system to Vault system.
+This project is used to import employees from CSV/text files to Veeva Vault.
 
 ## Features
 
-WonderHealth Inc. will provide the employee data files based on different departments of WonderDrugs, WonderPharma and WonderBio. 
-The import process will get the employee files, validate the employee data and import the employees to Vault system.
+WonderHealth Inc. will provide the employee data files based on different departments of WonderDrugs, WonderPharma, and WonderBio. 
+The import process will obtain the employee files, validate the employee data, and import the employees into the Vault system.
 
 ## Design Architecture
 
@@ -13,23 +13,26 @@ The import process will get the employee files, validate the employee data and i
 
 ![image](https://github.com/user-attachments/assets/04ce4e8d-0b79-4d28-9a79-4d2c944736e7)
 
-### Brief Resources Introduction 
+### How it works
 
-We choose to leverage AWS for our cloud-based solution because of its reliability, security and cost-effectiveness. The whole project is designed based on an event-driven architecture. When the event occurs on the scheduled time, it will trigger the followed processing steps automatically. The core services used are listed below:
+The solution is built on AWS. The core of the project is a scheduled job that reads the data from the target S3 bucket and validates and imports the data into Vault with REST API.
 
-- **Amazon S3**: We will use Amazon S3 for cloud object storage. WonderHealth Inc. will upload employee files to S3 and we will get the files for processing later.
-  - **Note** that different departments will have different folders in our case.
+
+The following AWS services are used in this solution:
+
+- **Amazon S3**: WonderHealth uses S3 to upload employee data to be processed by our solution. 
+  - **Note** that different departments will have different folders in our case. Currently, only CSV file is supported.
     
-- **Amazon EventBridge**: This serverless event bus will be used to schedule and trigger file processing events on a daily basis. It will trigger our lambda function.
-- **AWS Lambda**: We will utilize AWS Lambda to validate the presence of employee files in the S3 bucket. If new files are detected, our Lambda function will trigger a batch processing job to process the employee data import.
-  - **Note** that there is another git repository for the event handler used by Lambda per the design architecture. Refer to below link for the related code please.
+- **Amazon EventBridge**: This serverless event bus will schedule and trigger file processing events daily, triggering our lambda function.
+- **AWS Lambda**: We use AWS Lambda to validate the presence of employee files in the S3 bucket. If new files are detected, our Lambda function will trigger a batch processing job to process the employee data import.
+  - **Note** that, per the design architecture, there is another git repository for the event handler used by Lambda. Please refer to the link below for the related code.
     - https://github.com/Annielz1223/ScheduledEventHandler
-    - The event handler will be triggered on a fixed time on a daily basis. And it will check if there are new employee files uploaded to S3 or not. The batch job will be triggered when new file(s) are detected.
-- **AWS Batch**: The batch computing service will be used to handle the retrieval of employee files, perform the necessary data validation, and import processed data into Vault system.
-- **AWS Fargate**: We could run our batch jobs using AWS Fargate, a serverless compute engine for containers.
-- **Amazon ECR**: We will use Amazon Elastic Container Registry (ECR) to store and manage our Docker images, enabling seamless pushing and pulling of container images for our batch job.
-- **Cloudwatch**: This monitoring and logging service could be used to track the runing status of our project.
-- **Others**: Except for these main resources used, we also need to consider for
+    The event handler will be triggered by the EventBridge.
+- **AWS Batch**: The batch computing service will retrieve employee files, data validation, and import data into the target Vault. The job runs in a Docker container that is supported by AWS Fargate.
+- **AWS Fargate**: Virtual machine to run the docker container.
+- **Amazon ECR**: This is for storing the docker image containers. 
+- **Cloudwatch**: used to track the running status of our project.
+- **Others**: Except for these main resources used, we also need the following AWS resources:
   - VPC(Virtual Private Cloud for the whole project)
   - IAM Role(Different role-based control for different users and resources)
   - Security Group(virtual firewalls to control inbound and outbound traffic for our VPC)
