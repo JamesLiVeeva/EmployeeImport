@@ -4,7 +4,7 @@ This project is used to import employees from CSV/text files to Veeva Vault.
 
 ## Features
 
-WonderHealth Inc. will provide the employee data files based on different departments of WonderDrugs, WonderPharma, and WonderBio. 
+WonderHealth Inc. will provide the employee data files for their departments of WonderDrugs, WonderPharma, and WonderBio. 
 The import process will obtain the employee files, validate the employee data, and import the employees into the Vault system.
 
 ## Architecture Diagram 
